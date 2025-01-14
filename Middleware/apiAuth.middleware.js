@@ -1,13 +1,13 @@
-const Response = require("../Helpers/response.helper");
-const { verifyToken, extractToken } = require("../Helpers/auth.helper");
-const DB = require("../Helpers/crud.helper");
+const Response = require('../Helpers/response.helper');
+const { verifyToken, extractToken } = require('../Helpers/auth.helper');
+const DB = require('../Helpers/crud.helper');
 
-const Role = require("../Database/Models/role.model");
+const Role = require('../Database/Models/role.model');
 
 function authorize(authRoles) {
   return async (req, res, next) => {
     const roles = await DB.read(Role, {
-      _id: { $in: req.query.user_role.split(",") },
+      _id: { $in: req.query.user_role.split(',') }
     });
 
     if (roles.length && authRoles.length) {
@@ -26,10 +26,10 @@ function authorize(authRoles) {
       }
       if (grantAcccess) return next();
     }
-    res.set("x-server-errortype", "AccessDeniedException");
+    res.set('x-server-errortype', 'AccessDeniedException');
     return Response.unauthorized(res, {
-      message: "access denied !, user not authorized to access resource",
-      status: 403,
+      message: 'access denied !, user not authorized to access resource',
+      status: 403
     });
   };
 }
@@ -37,26 +37,22 @@ function authorize(authRoles) {
 // eslint-disable-next-line extractToken-> consistent-return For PostMan testing -> AccessToken
 async function authJwt(req, res, next) {
   try {
-    const token = await extractToken(req); // For PostMan testing -> AccessToken
-    // let { authorization: token } = JSON.parse(
-    //   req.cookies[`${process.env.APP_NAME}-access`]
-    // );
+    const token = await extractToken(req);
     const verify = await verifyToken(token, process.env.ACCESS_TOKEN_SECRET);
-
     req.query.auth_user_id = verify?.id;
-    req.query.user_role = (verify?.role).join(",");
+    req.query.user_role = verify?.role;
     next();
   } catch (error) {
     if (error?.name) {
-      res.set("x-server-errortype", "AccessTokenExpired");
+      res.set('x-server-errortype', 'AccessTokenExpired');
       return Response.unauthorized(res, { message: error?.message });
     }
-    res.set("x-server-errortype", "InternalServerError");
-    return Response.error(res, { message: "something went wrong !" });
+    res.set('x-server-errortype', 'InternalServerError');
+    return Response.error(res, { message: 'something went wrong !' });
   }
 }
 
 module.exports = {
   authorize,
-  authJwt,
+  authJwt
 };

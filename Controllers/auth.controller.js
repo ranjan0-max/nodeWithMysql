@@ -1,18 +1,14 @@
-const Response = require("../Helpers/response.helper");
-const { IST } = require("../Helpers/dateTime.helper");
-const { generateCustomError } = require("../Helpers/error.helper");
-const AuthHelper = require("../Helpers/auth.helper");
-const DB = require("../Helpers/crud.helper");
-const User = require("../Database/Models/user.model");
-const Role = require("../Database/Models/role.model");
+const Response = require('../Helpers/response.helper');
+const { IST } = require('../Helpers/dateTime.helper');
+const { generateCustomError } = require('../Helpers/error.helper');
+const AuthHelper = require('../Helpers/auth.helper');
+const DB = require('../Helpers/crud.helper');
+const Logger = require('../Helpers/logger');
 
-const {
-  ACCESS_TOKEN_SECRET,
-  REFRESH_TOKEN_SECRET,
-  ACCESS_TOKEN_EXPIRY,
-  REFRESH_TOKEN_EXPIRY,
-  APP_NAME,
-} = process.env;
+const User = require('../Database/Models/user.model');
+const Role = require('../Database/Models/role.model');
+
+const { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET, ACCESS_TOKEN_EXPIRY, REFRESH_TOKEN_EXPIRY, APP_NAME } = process.env;
 
 /**
  * @description Tries to register the user with provided body
@@ -24,7 +20,7 @@ async function register(req, res, next) {
     // unique email check
     await DB.isUnique(User, { email: req.body.email });
 
-    const role = await DB.read(Role, { role: "SUPER_ADMIN" });
+    const role = await DB.read(Role, { role: 'SUPER_ADMIN' });
     // hash password
     const passwordHash = await AuthHelper.generateHash(req.body.password);
 
@@ -36,8 +32,8 @@ async function register(req, res, next) {
       password: passwordHash,
       device_token: req.body.token || null,
       role: [role[0].id],
-      created_at: IST("date"),
-      updated_at: IST("date"),
+      created_at: IST('date'),
+      updated_at: IST('date')
     });
     if (!createdUser instanceof Array) createdUser = [{ ...createdUser }];
 
@@ -45,7 +41,7 @@ async function register(req, res, next) {
       {
         id: createdUser[0]._id,
         role: createdUser[0].role.map((item) => item._id),
-        activeStatus: createdUser[0].activeStatus,
+        activeStatus: createdUser[0].activeStatus
       },
       ACCESS_TOKEN_EXPIRY,
       ACCESS_TOKEN_SECRET
@@ -55,7 +51,7 @@ async function register(req, res, next) {
       {
         id: createdUser[0]._id,
         role: createdUser[0].role.map((item) => item._id),
-        activeStatus: createdUser[0].activeStatus,
+        activeStatus: createdUser[0].activeStatus
       },
       REFRESH_TOKEN_EXPIRY,
       REFRESH_TOKEN_SECRET
@@ -64,7 +60,7 @@ async function register(req, res, next) {
     res.cookie(APP_NAME, JSON.stringify({ refreshToken }), {
       secure: true,
       httpOnly: true,
-      expires: IST("date", 30, "days"),
+      expires: IST('date', 30, 'days')
     });
 
     Response.success(res, {
@@ -75,9 +71,9 @@ async function register(req, res, next) {
           name: createdUser[0].name,
           email: createdUser[0].email || null,
           phone: createdUser[0].phone || null,
-          id: createdUser[0]._id,
-        },
-      ],
+          id: createdUser[0]._id
+        }
+      ]
     });
 
     await DB.update(User, {
@@ -85,8 +81,8 @@ async function register(req, res, next) {
       data: {
         activeStatus: true,
         refreshToken: refreshToken,
-        updated_at: IST("date"),
-      },
+        updated_at: IST('date')
+      }
     });
   } catch (error) {
     next(error);
@@ -102,21 +98,14 @@ async function register(req, res, next) {
 const login = async (req, res, next) => {
   try {
     let query = {};
-    if (req.body?.email) query.email = req.body.email;
+    if (req.body?.userId) query.userId = req.body.userId;
     else if (req.body?.phone) query.phone = req.body.phone;
-    else await generateCustomError("BAD REQUEST", "bad_request", 400);
+    else await generateCustomError('BAD REQUEST', 'bad_request', 400);
 
     const user = await DB.findDetails(User, query);
 
-    if (!user.length)
-      await generateCustomError(
-        "Please register and try again !",
-        "user_not_found",
-        401,
-        "clientUnautorized"
-      );
-    if (user[0]?.isDeleted)
-      await generateCustomError("Account Blocked !", "account_blocked", 400);
+    if (!user.length) await generateCustomError('Please register and try again !', 'user_not_found', 401, 'clientUnautorized');
+    if (user[0]?.isDeleted) await generateCustomError('Account Blocked !', 'account_blocked', 400);
     // if (!user[0]?.activeStatus)
     //   await generateCustomError(
     //     "Account Not Active !",
@@ -133,7 +122,7 @@ const login = async (req, res, next) => {
       {
         id: user[0].id,
         role: user[0].role,
-        activeStatus: user[0].activeStatus,
+        activeStatus: user[0].activeStatus
       },
       ACCESS_TOKEN_EXPIRY,
       ACCESS_TOKEN_SECRET
@@ -144,7 +133,7 @@ const login = async (req, res, next) => {
       {
         id: user[0].id,
         role: user[0].role,
-        activeStatus: user[0].activeStatus,
+        activeStatus: user[0].activeStatus
       },
       REFRESH_TOKEN_EXPIRY,
       REFRESH_TOKEN_SECRET
@@ -153,21 +142,21 @@ const login = async (req, res, next) => {
     res.cookie(APP_NAME, JSON.stringify({ refreshToken }), {
       secure: true,
       httpOnly: true,
-      expires: IST("date", 7, "days"),
-      sameSite: "none",
+      expires: IST('date', 7, 'days'),
+      sameSite: 'none'
     });
 
     const updatingUserQuery = {
-      id: user[0].id,
+      id: user[0].id
     };
 
     const userUpdateData = {
-      refreshToken: refreshToken,
+      refreshToken: refreshToken
     };
 
     await DB.update(User, {
       query: updatingUserQuery,
-      data: userUpdateData,
+      data: userUpdateData
     });
 
     Response.success(res, {
@@ -175,11 +164,13 @@ const login = async (req, res, next) => {
         accessToken: accessToken,
         user: { ...user[0] },
         refreshToken: refreshToken,
-        date: IST(),
+        date: IST()
       },
-      message: "Logged-In SuccessFully",
+      message: 'Logged-In SuccessFully'
     });
   } catch (error) {
+    console.log(error);
+    Logger.error(error.message + ' at login function auth controller');
     next(error);
   }
 };
@@ -195,48 +186,31 @@ const generateTokens = async (req, res, next) => {
     let token = JSON.parse(req.cookies[APP_NAME]);
     token = token?.refreshToken;
 
-    if (!token)
-      await generateCustomError(
-        "Invalid data or data missing !",
-        "bad_request",
-        400,
-        "invalidData"
-      );
+    if (!token) await generateCustomError('Invalid data or data missing !', 'bad_request', 400, 'invalidData');
 
     const verify = await AuthHelper.verifyToken(token, REFRESH_TOKEN_SECRET);
 
     const user = await DB.read(User, {
-      _id: verify?.id,
+      id: verify?.id,
       refreshToken: token,
-      isDeleted: false,
+      isDeleted: false
     });
 
-    if (!user.length)
-      await generateCustomError(
-        "Invalid token or user blocked !",
-        "bad_request",
-        400,
-        "invalidTokenOrUserBlocked"
-      );
+    if (!user) await generateCustomError('Invalid token or user blocked !', 'bad_request', 400, 'invalidTokenOrUserBlocked');
 
     const userData = {
-      id: user[0]._id || user[0].id,
-      name: user[0]?.name,
-      email: user[0]?.email,
-      role: user[0]?.role,
-      image: user[0]?.image,
+      id: user.id,
+      name: user?.name,
+      userId: user?.userId,
+      role: user?.role
     };
 
-    const accessToken = await AuthHelper.generateToken(
-      userData,
-      ACCESS_TOKEN_EXPIRY,
-      ACCESS_TOKEN_SECRET
-    );
+    const accessToken = await AuthHelper.generateToken(userData, ACCESS_TOKEN_EXPIRY, ACCESS_TOKEN_SECRET);
 
-    if (!accessToken)
-      await generateCustomError("Unable to generate access token !");
+    if (!accessToken) await generateCustomError('Unable to generate access token !');
     return Response.success(res, { data: [{ accessToken }] });
   } catch (error) {
+    Logger.error(error.message + ' at generate tokens function auth controller');
     next(error);
   }
 };
@@ -252,33 +226,79 @@ const logout = async (req, res, next) => {
     // Check if auth_user_id is provided
     if (!authUserId) {
       return Response.error(res, {
-        message: "auth_user_id is required.",
-        statusCode: 400,
+        message: 'auth_user_id is required.',
+        statusCode: 400
       });
     }
 
     // Check if the user exists (you may need to implement this function)
     if (!authUserId) {
       return Response.error(res, {
-        message: "User not found.",
-        statusCode: 404,
+        message: 'User not found.',
+        statusCode: 404
       });
     }
 
     // Perform the logout actions
     await DB.update(User, {
-      query: { _id: authUserId },
+      query: { id: authUserId },
       data: {
-        refreshToken: "",
-        active_status: false,
-        updated_at: IST("date"),
-      },
+        refreshToken: '',
+        active: false,
+        updatedAt: IST('date')
+      }
     });
 
-    res.clearCookie(APP_NAME);
-    return Response.success(res, { message: "User logged out!" });
+    res.clearCookie(APP_NAME, {
+      secure: true,
+      httpOnly: true,
+      sameSite: 'none'
+    });
+    return Response.success(res, { message: 'User logged out!' });
   } catch (error) {
-    console.log("error", error);
+    console.log('error', error);
+    next(error);
+  }
+};
+
+const getUser = async (req, res, next) => {
+  try {
+    const user = await User.findOne({
+      where: { id: req.query.auth_user_id },
+      attributes: {
+        exclude: ['password', 'isDeleted', 'refreshToken', 'createdAt']
+      },
+      include: [
+        {
+          model: Role,
+          as: 'userRole',
+          attributes: {
+            exclude: ['updatedAt', 'roleActive', 'createdAt']
+          }
+        }
+      ]
+    });
+
+    // Check if user is found or not
+    if (!user) {
+      await generateCustomError('Please register and try again !', 'user_not_found', 400);
+    }
+
+    // Check if user account is blocked
+    if (user.is_deleted) {
+      await generateCustomError('Account Blocked !', 'account_blocked', 400);
+    }
+
+    // Send success response with user data
+    Response.success(res, {
+      data: {
+        user,
+        date: IST()
+      },
+      message: 'Logged-In User Data Found'
+    });
+  } catch (error) {
+    console.log(error);
     next(error);
   }
 };
@@ -288,4 +308,5 @@ module.exports = {
   login,
   logout,
   generateTokens,
+  getUser
 };

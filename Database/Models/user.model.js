@@ -1,42 +1,53 @@
-const { DataTypes } = require("sequelize");
-const { sequelize } = require("../connection"); // Assuming you have a sequelize connection setup
-const Role = require("./role.model");
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../connection'); // Assuming you have a sequelize connection setup
+const Role = require('./role.model');
 
 const User = sequelize.define(
-  "User",
+  'User',
   {
     name: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: false
     },
-    email: {
+    userId: {
       type: DataTypes.STRING,
-      unique: true,
+      unique: true
     },
     password: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: false
     },
     phoneNumber: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.INTEGER
     },
     refreshToken: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING
     },
-    activeStatus: {
+    apiToken: {
+      type: DataTypes.STRING
+    },
+    active: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false,
+      defaultValue: false
     },
     isDeleted: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false,
+      defaultValue: false
     },
+    role: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: Role,
+        key: 'id'
+      }
+    }
   },
   {
-    timestamps: true,
+    timestamps: true
   }
 );
 
-User.belongsTo(Role, { foreignKey: "role" });
+User.belongsTo(Role, { foreignKey: 'role', as: 'userRole' });
 
 module.exports = User;
