@@ -1,42 +1,37 @@
 require('dotenv').config();
-const { sequelize } = require('../connection');
+const { PrismaClient } = require('@prisma/client');
 const AuthHelper = require('../../Helpers/auth.helper');
 
-const User = require('../Models/user.model');
+const prisma = new PrismaClient();
 
 const init = async () => {
   try {
-    console.log('Running seeder!');
+    console.log('Running Prisma Seeder!');
 
-    // Create the user data
-    const data = [
-      {
-        name: 'test',
-        userId: 'principal@gmail.com',
-        password: await AuthHelper.generateHash('secret'), // Hash the password here
-        role: 1,
-        phoneNumber: 9876543210,
-        active: true
-      }
-    ];
+    const hashedPassword = await AuthHelper.generateHash('secret');
 
-    // Disable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+    const data = {
+      name: 'test',
+      email: 'principal@gmail.com',
+      password: hashedPassword,
+      roleId: 1,
+      phoneNumber: 9876543210,
+      active: true,
+    };
 
-    // Truncate the User table
-    await User.destroy({ truncate: true });
+    await prisma.user.deleteMany();
+    console.log('User table cleared.');
 
-    // Enable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
-
-    console.log('Adding seeder record/s!');
-    await User.bulkCreate(data);
+    // Insert new user
+    await prisma.user.create({ data });
+    console.log('Seeder record added!');
 
     console.log('DB seed complete');
-    process.exit();
   } catch (error) {
-    console.log('Error seeding DB :: ', error?.message);
-    process.exit(1);
+    console.error('Error seeding DB ::', error.message);
+  } finally {
+    await prisma.$disconnect();
+    process.exit();
   }
 };
 

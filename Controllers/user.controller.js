@@ -1,134 +1,88 @@
-const Response = require('../Helpers/response.helper');
-const { IST } = require('../Helpers/dateTime.helper');
-const DB = require('../Helpers/crud.helper');
-const Logger = require('../Helpers/logger');
-const AuthHelper = require('../Helpers/auth.helper');
-const controllerName = 'user.controller';
+const Response = require("../Helpers/response.helper");
+const { IST } = require("../Helpers/dateTime.helper");
+const Logger = require("../Helpers/logger");
+const AuthHelper = require("../Helpers/auth.helper");
+const DB = require("../Helpers/crud.helper");
+const controllerName = "user.controller";
 
-// models
-const User = require('../Database/Models/user.model');
-const UserConfig = require('../Database/Models/config.model');
-const Role = require('../Database/Models/role.model');
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
 
+// Create a new user
 const createUser = async (req, res) => {
   try {
-    await DB.isUnique(User, { email: req.body.email });
+    const existingUser = await prisma.user.findUnique({
+      where: { email: req.body.email },
+    });
+    if (existingUser) {
+      return Response.error(res, { message: "Email already in use" });
+    }
 
     const passwordHash = await AuthHelper.generateHash(req.body.password);
-    const data = {
-      ...req.body,
-      password: passwordHash
-    };
-    await DB.create(User, data);
+    const newUser = await prisma.user.create({
+      data: { ...req.body, password: passwordHash },
+    });
 
     return Response.success(res, {
-      data: data,
-      message: 'User Created SuccessFully'
+      data: {},
+      message: "User Created Successfully",
     });
   } catch (error) {
-    Logger.error(error.message + ' at createUser function ' + controllerName);
-    return Response.error(res, {
-      data: [],
-      message: error.message
-    });
+    Logger.error(error.message + " at createUser function " + controllerName);
+    return Response.error(res, { message: error.message });
   }
 };
 
+// Get all users
 const getUsers = async (req, res) => {
   try {
     delete req.query.auth_user_id;
     delete req.query.user_role;
 
-    const query = {
-      ...req.query
-    };
+    const numberFields = ["phoneNumber", "roleId", "id"];
+    numberFields.forEach((field) => {
+      if (req.query[field]) {
+        req.query[field] = parseInt(req.query[field], 10);
+      }
+    });
 
-    const roleIncludeConfig = {
-      model: Role,
-      as: 'userRole',
-      attributes: ['id', 'role']
-    };
-
-    const includes = [roleIncludeConfig];
-
-    const userList = await DB.findDetails(User, query, includes);
+    const userList = await prisma.user.findMany({
+      include: { role: true },
+      where: req.query,
+    });
     return Response.success(res, {
       data: userList,
-      message: 'Users Found'
+      message: "Users Found",
     });
   } catch (error) {
-    Logger.error(error.message + ' at getUsers function ' + controllerName);
-    return Response.error(res, {
-      data: [],
-      message: error.message
-    });
+    Logger.error(error.message + " at getUsers function " + controllerName);
+    return Response.error(res, { message: error.message });
   }
 };
 
-// get user config by there Id
-const getUserConfig = async (req, res) => {
-  try {
-    delete req.query.user_role;
-
-    const query = {
-      userId: req.query.auth_user_id
-    };
-
-    const selectedField = ['menuId'];
-    const userConfig = await DB.findDetailsWithSelectedField(UserConfig, { conditions: query, projection: selectedField });
-
-    return Response.success(res, {
-      data: userConfig,
-      message: 'User Config Found'
-    });
-  } catch (error) {
-    Logger.error(error.message + 'at getUserConfig function' + controllerName);
-    return Response.error(res, {
-      data: [],
-      message: error.message
-    });
-  }
-};
-
-// update the user
+// Update user information
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-
-    const query = {
-      id: id
-    };
-
-    const data = {
-      ...req.body,
-      updatedAt: IST()
-    };
+    let data = { ...req.body, updatedAt: IST() };
 
     if (data.password) {
-      const passwordHash = await AuthHelper.generateHash(data.password);
-      data.password = passwordHash;
-    } else {
-      delete data.password;
+      data.password = await AuthHelper.generateHash(data.password);
     }
 
-    await DB.update(User, { query: query, data: data });
+    await prisma.user.update({
+      where: { id: parseInt(id) },
+      data: data,
+    });
 
     return Response.success(res, {
-      data: data,
-      message: 'User Updated SuccessFully'
+      data: {},
+      message: "User Updated Successfully",
     });
   } catch (error) {
-    Logger.error(error.message + 'at updateUser function' + controllerName);
-    return Response.error(res, {
-      data: [],
-      message: error.message
-    });
+    Logger.error(error.message + " at updateUser function " + controllerName);
+    return Response.error(res, { message: error.message });
   }
 };
 
-module.exports = {
-  createUser,
-  getUsers,
-  getUserConfig,
-  updateUser
-};
+module.exports = { createUser, getUsers, updateUser };

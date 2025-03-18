@@ -1,182 +1,83 @@
-/**
- *
- * @param {array of keys ["key_one", "key_two", ...]} keys
- * @param { data object [{ key_one: 'data', key_two: 0, key_three: 'more data'},...]} data
- */
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
+// Remove specified keys from data object(s)
 function removeKeys(keys, data) {
-  let dataArray;
-  if (data instanceof Array) {
-    dataArray = data;
-  } else {
-    dataArray = [data];
-  }
-  let newDataArray = dataArray.map((item) => {
-    keys.filter((key) => {
-      if (key == '_id') {
+  const dataArray = Array.isArray(data) ? data : [data];
+  return dataArray.map((item) => {
+    keys.forEach((key) => {
+      if (key === '_id') {
         item.id = item[key];
       }
-      if (item.hasOwnProperty(key)) {
-        delete item[key];
-      }
+      delete item[key];
     });
     return item;
   });
-  return newDataArray;
 }
 
-// -=-=-=-=-=-=-=-=-=- check unique =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function isUnique(Model, data) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const count = await Model.count({ where: data });
-      if (count > 0) {
-        let error = new Error('Data exists!');
-        error.name = 'NON_UNIQUE';
-        error.resCode = 400;
-        throw error;
-      }
-      resolve(true);
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-// -=-=-=-=-=-=-=-=-=- get the count =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function getCount(Model, query = {}) {
-  try {
-    const count = await Model.count({ where: query });
-    return count;
-  } catch (error) {
-    throw error;
+// Check uniqueness
+async function isUnique(model, data) {
+  const count = await model.count({ where: data });
+  if (count > 0) {
+    throw new Error('Data exists!');
   }
+  return true;
 }
 
-// -=-=-=-=-=-=-=-=-=- create =-=-=-=-=-=-=-=-=-=-=-=-=-
+// Get count
+async function getCount(model, query = {}) {
+  return await model.count({ where: query });
+}
 
-async function create(Model, data) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const createdData = await Model.create(data);
-      const savedData = removeKeys(['id'], createdData.toJSON()); // Assuming Sequelize uses "id" instead of "_id"
-      resolve(savedData);
-    } catch (error) {
-      reject(error);
-    }
+// Create record
+async function create(model, data) {
+  const createdData = await model.create({ data });
+  return removeKeys(['id'], createdData);
+}
+
+// Read with pagination
+async function readWithPagination(model, query, pagination = {}, exclude = [], orderBy = []) {
+  const data = await model.findMany({
+    where: query,
+    select: exclude.length ? Object.fromEntries(exclude.map((key) => [key, false])) : undefined,
+    skip: pagination.skip || 0,
+    take: pagination.limit || 10,
+    orderBy,
   });
+  return data;
 }
 
-// -=-=-=-=-=-=-=-=-=- read the data with selected pages and return array =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function readWithPagination(Model, query, pagination = false, exclude = {}, sort = {}) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      let options = {
-        where: query,
-        attributes: exclude,
-        limit: pagination ? pagination.limit || 10 : undefined,
-        offset: pagination ? pagination.skip || 0 : 0,
-        order: sort
-      };
-
-      const data = await Model.findAll(options);
-      resolve(data.map((record) => record.toJSON()));
-    } catch (error) {
-      reject(error);
-    }
+// Read single record
+async function read(model, query, exclude = [], orderBy = []) {
+  const data = await model.findFirst({
+    where: query,
+    select: exclude.length ? Object.fromEntries(exclude.map((key) => [key, false])) : undefined,
+    orderBy,
   });
+  return data;
 }
 
-// -=-=-=-=-=-=-=-=-=- simple read and return a object =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function read(Model, query, exclude = {}, sort = []) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const data = await Model.findOne({
-        where: query,
-        attributes: exclude,
-        order: sort
-      });
-      resolve(data ? data.toJSON() : null);
-    } catch (error) {
-      console.log(error);
-      reject(error);
-    }
-  });
+// Update record
+async function update(model, query, data) {
+  return await model.updateMany({ where: query, data });
 }
 
-// -=-=-=-=-=-=-=-=-=- update =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function update(Model, data) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      await Model.update(data.data, { where: data.query });
-      resolve(true);
-    } catch (error) {
-      reject(error);
-    }
-  });
+// Delete record
+async function remove(model, query) {
+  return await model.deleteMany({ where: query });
 }
 
-// -=-=-=-=-=-=-=-=-=- delete =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function remove(Model, data) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      await Model.destroy({ where: data });
-      resolve(true);
-    } catch (error) {
-      reject(error);
-    }
-  });
+// Find details with includes
+async function findDetails(model, query, includes = []) {
+  return await model.findMany({ where: query, include: includes.length ? Object.fromEntries(includes.map((key) => [key, true])) : undefined });
 }
 
-// -=-=-=-=-=-=-=-=-=- read the and return the array =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function findDetails(Model, query, includes = []) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const options = {
-        where: query
-      };
-
-      if (includes.length > 0) {
-        options.include = includes;
-      }
-
-      const data = await Model.findAll(options);
-      resolve(data.map((record) => record.toJSON()));
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-// -=-=-=-=-=-=-=-=-=- read data with selected coulums =-=-=-=-=-=-=-=-=-=-=-=-=-
-
-async function findDetailsWithSelectedField(Model, query, includes = []) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const options = {
-        where: query.conditions || {},
-        attributes: query.projection || []
-      };
-
-      if (includes.length > 0) {
-        options.include = includes;
-      }
-
-      const data = await Model.findAll(options);
-      resolve(data.map((record) => record.toJSON()));
-    } catch (error) {
-      const newErr = new Error('Unable to get details');
-      newErr.error = error;
-      newErr.code = 401;
-      reject(newErr);
-    }
+// Find details with selected fields
+async function findDetailsWithSelectedField(model, query, projection = [], includes = []) {
+  return await model.findMany({
+    where: query.conditions || {},
+    select: projection.length ? Object.fromEntries(projection.map((key) => [key, true])) : undefined,
+    include: includes.length ? Object.fromEntries(includes.map((key) => [key, true])) : undefined,
   });
 }
 
@@ -189,5 +90,5 @@ module.exports = {
   update,
   remove,
   findDetails,
-  findDetailsWithSelectedField
+  findDetailsWithSelectedField,
 };

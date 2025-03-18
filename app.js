@@ -1,7 +1,6 @@
 const express = require("express");
 const helmet = require("helmet");
 const xss = require("xss-clean");
-const mongoSanitize = require("express-mongo-sanitize");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 require("dotenv").config();
@@ -30,7 +29,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(mongoSanitize());
 app.use(ReqMethod);
 app.use(ReqLogger);
 app.use(checkReqMethod);

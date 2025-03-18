@@ -2,139 +2,41 @@ const Response = require('../Helpers/response.helper');
 const { IST } = require('../Helpers/dateTime.helper');
 const { generateCustomError } = require('../Helpers/error.helper');
 const AuthHelper = require('../Helpers/auth.helper');
-const DB = require('../Helpers/crud.helper');
 const Logger = require('../Helpers/logger');
-
-const User = require('../Database/Models/user.model');
-const Role = require('../Database/Models/role.model');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 const { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET, ACCESS_TOKEN_EXPIRY, REFRESH_TOKEN_EXPIRY, APP_NAME } = process.env;
 
-/**
- * @description Tries to register the user with provided body
- * @params data {Object} test
- * @returns Express res object with the success/failure and data
- */
-async function register(req, res, next) {
-  try {
-    // unique email check
-    await DB.isUnique(User, { email: req.body.email });
-
-    const role = await DB.read(Role, { role: 'SUPER_ADMIN' });
-    // hash password
-    const passwordHash = await AuthHelper.generateHash(req.body.password);
-
-    // create user
-    let createdUser = await DB.create(User, {
-      email: req.body?.email || null,
-      phone: req.body?.phone || null,
-      name: req.body.name || req.body.username,
-      password: passwordHash,
-      device_token: req.body.token || null,
-      role: [role[0].id],
-      created_at: IST('date'),
-      updated_at: IST('date')
-    });
-    if (!createdUser instanceof Array) createdUser = [{ ...createdUser }];
-
-    const accessToken = await AuthHelper.generateToken(
-      {
-        id: createdUser[0]._id,
-        role: createdUser[0].role.map((item) => item._id),
-        activeStatus: createdUser[0].activeStatus
-      },
-      ACCESS_TOKEN_EXPIRY,
-      ACCESS_TOKEN_SECRET
-    );
-
-    const refreshToken = await AuthHelper.generateToken(
-      {
-        id: createdUser[0]._id,
-        role: createdUser[0].role.map((item) => item._id),
-        activeStatus: createdUser[0].activeStatus
-      },
-      REFRESH_TOKEN_EXPIRY,
-      REFRESH_TOKEN_SECRET
-    );
-
-    res.cookie(APP_NAME, JSON.stringify({ refreshToken }), {
-      secure: true,
-      httpOnly: true,
-      expires: IST('date', 30, 'days')
-    });
-
-    Response.success(res, {
-      data: [
-        {
-          accessToken: accessToken,
-          refreshToken: refreshToken,
-          name: createdUser[0].name,
-          email: createdUser[0].email || null,
-          phone: createdUser[0].phone || null,
-          id: createdUser[0]._id
-        }
-      ]
-    });
-
-    await DB.update(User, {
-      query: { _id: createdUser[0]._id },
-      data: {
-        activeStatus: true,
-        refreshToken: refreshToken,
-        updated_at: IST('date')
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * @description Tries to login the user with provided body
- * @param req {object} Express req object
- * @param res {object} Express res object
- * @returns Express res object with the success/failure and data
- */
 const login = async (req, res, next) => {
   try {
-    let query = {};
-    if (req.body?.userId) query.userId = req.body.userId;
-    else if (req.body?.phone) query.phone = req.body.phone;
-    else await generateCustomError('BAD REQUEST', 'bad_request', 400);
+    const query = {};
+    if (req.body?.email) query.email = req.body.email;
+    else if (req.body?.password) query.password = req.body.password;
+    else return Response.badRequest(res, { message: "Invalid Inputs" });
 
-    const user = await DB.findDetails(User, query);
+    const user = await prisma.user.findUnique({
+      where: query,
+      include: { role: true }
+    });
 
-    if (!user.length) await generateCustomError('Please register and try again !', 'user_not_found', 401, 'clientUnautorized');
-    if (user[0]?.isDeleted) await generateCustomError('Account Blocked !', 'account_blocked', 400);
-    // if (!user[0]?.activeStatus)
-    //   await generateCustomError(
-    //     "Account Not Active !",
-    //     "account_deactive",
-    //     400
-    //   );
+    if (!user){
+      return Response.badRequest(res, { message: "Invalid User" });
+    }
+    if (user.isDeleted) {
+      return Response.badRequest(res, { message: "User Is In Active" });
+    }
 
-    await AuthHelper.compareHash(req.body.password, user[0].password);
-    delete user[0].password;
-    delete user[0].isDeleted;
-    delete user[0].refreshToken;
+    await AuthHelper.compareHash(req.body.password, user.password);
 
     const accessToken = await AuthHelper.generateToken(
-      {
-        id: user[0].id,
-        role: user[0].role,
-        activeStatus: user[0].activeStatus
-      },
+      { id: user.id, role: user.role, activeStatus: user.active },
       ACCESS_TOKEN_EXPIRY,
       ACCESS_TOKEN_SECRET
     );
 
-    // eslint-disable-next-line max-len
     const refreshToken = await AuthHelper.generateToken(
-      {
-        id: user[0].id,
-        role: user[0].role,
-        activeStatus: user[0].activeStatus
-      },
+      { id: user.id, role: user.role, activeStatus: user.active },
       REFRESH_TOKEN_EXPIRY,
       REFRESH_TOKEN_SECRET
     );
@@ -146,27 +48,14 @@ const login = async (req, res, next) => {
       sameSite: 'none'
     });
 
-    const updatingUserQuery = {
-      id: user[0].id
-    };
-
-    const userUpdateData = {
-      refreshToken: refreshToken
-    };
-
-    await DB.update(User, {
-      query: updatingUserQuery,
-      data: userUpdateData
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
     });
 
     Response.success(res, {
-      data: {
-        accessToken: accessToken,
-        user: { ...user[0] },
-        refreshToken: refreshToken,
-        date: IST()
-      },
-      message: 'Logged-In SuccessFully'
+      data: { accessToken, user, refreshToken },
+      message: 'Logged-In Successfully'
     });
   } catch (error) {
     console.log(error);
@@ -175,85 +64,42 @@ const login = async (req, res, next) => {
   }
 };
 
-/**
- * @description Tries to login the user with provided body
- * @param req {Object} Express req object
- * @param res {Object} Express res object
- * @returns Express res object with the success/failure and generated token
- */
 const generateTokens = async (req, res, next) => {
   try {
-    let token = JSON.parse(req.cookies[APP_NAME]);
-    token = token?.refreshToken;
-
-    if (!token) await generateCustomError('Invalid data or data missing !', 'bad_request', 400, 'invalidData');
+    let token = JSON.parse(req.cookies[APP_NAME])?.refreshToken;
+    if (!token) return generateCustomError('Invalid data or data missing!', 'bad_request', 400, 'invalidData');
 
     const verify = await AuthHelper.verifyToken(token, REFRESH_TOKEN_SECRET);
-
-    const user = await DB.read(User, {
-      id: verify?.id,
-      refreshToken: token,
-      isDeleted: false
+    const user = await prisma.user.findUnique({
+      where: { id: verify.id, refreshToken: token, isDeleted: false }
     });
 
-    if (!user) await generateCustomError('Invalid token or user blocked !', 'bad_request', 400, 'invalidTokenOrUserBlocked');
+    if (!user) return generateCustomError('Invalid token or user blocked!', 'bad_request', 400, 'invalidTokenOrUserBlocked');
 
-    const userData = {
-      id: user.id,
-      name: user?.name,
-      userId: user?.userId,
-      role: user?.role
-    };
+    const accessToken = await AuthHelper.generateToken(
+      { id: user.id, name: user.name, userId: user.userId, role: user.role },
+      ACCESS_TOKEN_EXPIRY,
+      ACCESS_TOKEN_SECRET
+    );
 
-    const accessToken = await AuthHelper.generateToken(userData, ACCESS_TOKEN_EXPIRY, ACCESS_TOKEN_SECRET);
-
-    if (!accessToken) await generateCustomError('Unable to generate access token !');
     return Response.success(res, { data: [{ accessToken }] });
   } catch (error) {
     Logger.error(error.message + ' at generate tokens function auth controller');
     next(error);
   }
 };
-/**
- * @description Tries to Logout the user with provided Req Data
- * @param req {Object} Express req object
- * @param res {Object} Express res object
- * @returns Express res object with the success/failure and generated token
- */
+
 const logout = async (req, res, next) => {
   try {
-    const authUserId = req.query.auth_user_id;
-    // Check if auth_user_id is provided
-    if (!authUserId) {
-      return Response.error(res, {
-        message: 'auth_user_id is required.',
-        statusCode: 400
-      });
-    }
+    const { auth_user_id } = req.query;
+    if (!auth_user_id) return Response.error(res, { message: 'auth_user_id is required.', statusCode: 400 });
 
-    // Check if the user exists (you may need to implement this function)
-    if (!authUserId) {
-      return Response.error(res, {
-        message: 'User not found.',
-        statusCode: 404
-      });
-    }
-
-    // Perform the logout actions
-    await DB.update(User, {
-      query: { id: authUserId },
-      data: {
-        refreshToken: '',
-        active: false,
-        updatedAt: IST('date')
-      }
+    await prisma.user.update({
+      where: { id: parseInt(auth_user_id) },
+      data: { refreshToken: '', active: false, updatedAt: IST('date') }
     });
 
-    res.clearCookie(APP_NAME, {
-      secure: true,
-      httpOnly: true,
-      sameSite: 'none'
-    });
+    res.clearCookie(APP_NAME, { secure: true, httpOnly: true, sameSite: 'none' });
     return Response.success(res, { message: 'User logged out!' });
   } catch (error) {
     console.log('error', error);
@@ -263,50 +109,23 @@ const logout = async (req, res, next) => {
 
 const getUser = async (req, res, next) => {
   try {
-    const user = await User.findOne({
-      where: { id: req.query.auth_user_id },
-      attributes: {
-        exclude: ['password', 'isDeleted', 'refreshToken', 'createdAt']
-      },
-      include: [
-        {
-          model: Role,
-          as: 'userRole',
-          attributes: {
-            exclude: ['updatedAt', 'roleActive', 'createdAt']
-          }
-        }
-      ]
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(req.query.auth_user_id) },
+      select: {
+        id: true,
+        name: true,
+        userId: true,
+        active: true,
+        role: { select: { id: true, name: true } }
+      }
     });
 
-    // Check if user is found or not
-    if (!user) {
-      await generateCustomError('Please register and try again !', 'user_not_found', 400);
-    }
-
-    // Check if user account is blocked
-    if (user.is_deleted) {
-      await generateCustomError('Account Blocked !', 'account_blocked', 400);
-    }
-
-    // Send success response with user data
-    Response.success(res, {
-      data: {
-        user,
-        date: IST()
-      },
-      message: 'Logged-In User Data Found'
-    });
+    if (!user) return generateCustomError('Please register and try again!', 'user_not_found', 400);
+    Response.success(res, { data: { user, date: IST() }, message: 'Logged-In User Data Found' });
   } catch (error) {
     console.log(error);
     next(error);
   }
 };
 
-module.exports = {
-  register,
-  login,
-  logout,
-  generateTokens,
-  getUser
-};
+module.exports = { login, logout, generateTokens, getUser };

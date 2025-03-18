@@ -1,36 +1,43 @@
-const Response = require('../Helpers/response.helper');
 const { verifyToken, extractToken } = require('../Helpers/auth.helper');
-const DB = require('../Helpers/crud.helper');
 
-const Role = require('../Database/Models/role.model');
+const Response = require('../Helpers/response.helper');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
-function authorize(authRoles) {
+async function authorize(authRoles) {
   return async (req, res, next) => {
-    const roles = await DB.read(Role, {
-      _id: { $in: req.query.user_role.split(',') }
-    });
+    try {
+      const userRoles = req.query.user_role ? req.query.user_role.split(',') : [];
 
-    if (roles.length && authRoles.length) {
-      let rolesArray = roles.map((item) => item.role);
-      let grantAcccess = false;
-      let i = 0;
-      let length = rolesArray.length;
-
-      for (i; i < length; i++) {
-        if (authRoles.includes(rolesArray[i])) {
-          grantAcccess = true;
-          req.query.auth_role = rolesArray;
-          break;
-        }
-        continue;
+      if (!userRoles.length) {
+        throw new Error('User roles not provided');
       }
-      if (grantAcccess) return next();
+
+      // Fetch user roles from Prisma
+      const roles = await prisma.role.findMany({
+        where: { id: { in: userRoles.map(Number) } }, // Assuming role IDs are numbers
+        select: { role: true }
+      });
+
+      const rolesArray = roles.map((item) => item.role);
+
+      // Check if user has at least one authorized role
+      if (rolesArray.some((role) => authRoles.includes(role))) {
+        req.query.auth_role = rolesArray;
+        return next();
+      }
+
+      res.set('x-server-errortype', 'AccessDeniedException');
+      return Response.unauthorized(res, {
+        message: 'Access denied! User not authorized to access resource',
+        status: 403
+      });
+    } catch (error) {
+      return Response.error(res, {
+        message: error.message || 'Authorization error',
+        status: 500
+      });
     }
-    res.set('x-server-errortype', 'AccessDeniedException');
-    return Response.unauthorized(res, {
-      message: 'access denied !, user not authorized to access resource',
-      status: 403
-    });
   };
 }
 
